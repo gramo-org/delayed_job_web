@@ -117,38 +117,36 @@ class DelayedJobWeb < Sinatra::Base
 
   %w(enqueued working pending failed).each do |page|
     get "/#{page}" do
-      @jobs     = delayed_jobs(page.to_sym, @queues).order('created_at desc, id desc').offset(start).limit(per_page)
+      @jobs     = delayed_jobs(page.to_sym, @queues).reverse(:created_at, :id).offset(start).limit(per_page)
       @all_jobs = delayed_jobs(page.to_sym, @queues)
       erb page.to_sym
     end
   end
 
   post "/remove/:id" do
-    delayed_job.find(params[:id]).delete
+    delayed_job.where(id: params[:id]).delete
     redirect back
   end
 
   %w(pending failed).each do |page|
     post "/requeue/#{page}" do
-      delayed_jobs(page.to_sym, @queues).update_all(:run_at => Time.now, :failed_at => nil)
+      delayed_jobs(page.to_sym, @queues).update(:run_at => Time.now, :failed_at => nil)
       redirect back
     end
   end
 
   post "/requeue/:id" do
-    job = delayed_job.find(params[:id])
-    job.update_attributes(:run_at => Time.now, :failed_at => nil)
+    delayed_job.where(id: params[:id]).update(:run_at => Time.now, :failed_at => nil)
     redirect back
   end
 
   post "/reload/:id" do
-    job = delayed_job.find(params[:id])
-    job.update_attributes(:run_at => Time.now, :failed_at => nil, :locked_by => nil, :locked_at => nil, :last_error => nil, :attempts => 0)
+    delayed_job.where(id: params[:id]).update(:run_at => Time.now, :failed_at => nil, :locked_by => nil, :locked_at => nil, :last_error => nil, :attempts => 0)
     redirect back
   end
 
   post "/failed/clear" do
-    delayed_jobs(:failed, @queues).delete_all
+    delayed_jobs(:failed, @queues).delete
     redirect u('failed')
   end
 
@@ -158,9 +156,9 @@ class DelayedJobWeb < Sinatra::Base
     rel =
       case type
       when :working
-        rel.where('locked_at IS NOT NULL')
+        rel.exclude(:locked_at => nil)
       when :failed
-        rel.where('last_error IS NOT NULL')
+        rel.exclude(:last_error => nil)
       when :pending
         rel.where(:attempts => 0, :locked_at => nil)
       else
